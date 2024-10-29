@@ -1,0 +1,282 @@
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../generated/client"
+  previewFeatures = ["deno", "multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["auth", "chats", "communities", "content", "interactions", "users"]
+}
+
+model users {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  deletedAt DateTime?
+  email     String    @unique @db.VarChar(120)
+  password  String
+
+  @@schema("auth")
+}
+
+model chat_messages {
+  id                  String          @id @db.Uuid
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime
+  deletedAt           DateTime?
+  content             String
+  chatRoomId          String          @db.Uuid
+  senderId            String          @db.Uuid
+  isEdited            Boolean         @default(false)
+  replyToId           String?         @db.Uuid
+  chat_rooms          chat_rooms      @relation(fields: [chatRoomId], references: [id])
+  chat_messages       chat_messages?  @relation("chat_messagesTochat_messages", fields: [replyToId], references: [id])
+  other_chat_messages chat_messages[] @relation("chat_messagesTochat_messages")
+  user_profiles       user_profiles   @relation(fields: [senderId], references: [id])
+  message_reads       message_reads[]
+
+  @@schema("chats")
+}
+
+model chat_participants {
+  id            String        @id @db.Uuid
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime
+  deletedAt     DateTime?
+  chatRoomId    String        @db.Uuid
+  userProfileId String        @db.Uuid
+  isAdmin       Boolean       @default(false)
+  nickname      String?
+  lastRead      DateTime      @default(now())
+  isMuted       Boolean       @default(false)
+  chat_rooms    chat_rooms    @relation(fields: [chatRoomId], references: [id])
+  user_profiles user_profiles @relation(fields: [userProfileId], references: [id])
+
+  @@unique([chatRoomId, userProfileId])
+  @@schema("chats")
+}
+
+model chat_rooms {
+  id                String              @id @db.Uuid
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  deletedAt         DateTime?
+  name              String?
+  isGroup           Boolean             @default(false)
+  chat_messages     chat_messages[]
+  chat_participants chat_participants[]
+
+  @@schema("chats")
+}
+
+model message_reads {
+  id            String        @id @db.Uuid
+  createdAt     DateTime      @default(now())
+  messageId     String        @db.Uuid
+  userProfileId String        @db.Uuid
+  chat_messages chat_messages @relation(fields: [messageId], references: [id])
+  user_profiles user_profiles @relation(fields: [userProfileId], references: [id])
+
+  @@unique([messageId, userProfileId])
+  @@schema("chats")
+}
+
+model communities {
+  id                   String                 @id @db.Uuid
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime
+  deletedAt            DateTime?
+  name                 String
+  slug                 String                 @unique
+  description          String
+  userProfileId        String                 @db.Uuid
+  user_profiles        user_profiles          @relation(fields: [userProfileId], references: [id])
+  community_moderators community_moderators[]
+  community_posts      community_posts[]
+
+  @@schema("communities")
+}
+
+model community_moderators {
+  id            String        @id @db.Uuid
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime
+  deletedAt     DateTime?
+  communityId   String        @db.Uuid
+  userProfileId String        @db.Uuid
+  communities   communities   @relation(fields: [communityId], references: [id])
+  user_profiles user_profiles @relation(fields: [userProfileId], references: [id])
+
+  @@unique([communityId, userProfileId])
+  @@schema("communities")
+}
+
+model comment_closure {
+  ancestorId                                      String   @db.Uuid
+  descendantId                                    String   @db.Uuid
+  depth                                           Int
+  comments_comment_closure_ancestorIdTocomments   comments @relation("comment_closure_ancestorIdTocomments", fields: [ancestorId], references: [id], onDelete: Cascade)
+  comments_comment_closure_descendantIdTocomments comments @relation("comment_closure_descendantIdTocomments", fields: [descendantId], references: [id], onDelete: Cascade)
+
+  @@id([ancestorId, descendantId])
+  @@schema("content")
+}
+
+model comments {
+  id                                                     String            @id @db.Uuid
+  createdAt                                              DateTime          @default(now())
+  updatedAt                                              DateTime
+  deletedAt                                              DateTime?
+  content                                                String
+  authorId                                               String            @db.Uuid
+  postId                                                 String            @db.Uuid
+  parentId                                               String?           @db.Uuid
+  comment_closure_comment_closure_ancestorIdTocomments   comment_closure[] @relation("comment_closure_ancestorIdTocomments")
+  comment_closure_comment_closure_descendantIdTocomments comment_closure[] @relation("comment_closure_descendantIdTocomments")
+  user_profiles                                          user_profiles     @relation(fields: [authorId], references: [id])
+  comments                                               comments?         @relation("commentsTocomments", fields: [parentId], references: [id])
+  other_comments                                         comments[]        @relation("commentsTocomments")
+  posts                                                  posts             @relation(fields: [postId], references: [id])
+  comment_votes                                          comment_votes[]
+
+  @@schema("content")
+}
+
+model community_posts {
+  id          String      @id @db.Uuid
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime
+  deletedAt   DateTime?
+  postId      String      @db.Uuid
+  communityId String      @db.Uuid
+  communities communities @relation(fields: [communityId], references: [id])
+  posts       posts       @relation(fields: [postId], references: [id])
+
+  @@unique([postId, communityId])
+  @@schema("content")
+}
+
+model posts {
+  id              String            @id @db.Uuid
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime
+  deletedAt       DateTime?
+  title           String
+  content         String
+  authorId        String            @db.Uuid
+  originalPostId  String?           @db.Uuid
+  comments        comments[]
+  community_posts community_posts[]
+  user_profiles   user_profiles     @relation(fields: [authorId], references: [id])
+  posts           posts?            @relation("postsToposts", fields: [originalPostId], references: [id])
+  other_posts     posts[]           @relation("postsToposts")
+  post_views      post_views[]
+  post_votes      post_votes[]
+  saved_posts     saved_posts[]
+
+  @@schema("content")
+}
+
+model comment_votes {
+  id            String        @id @db.Uuid
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime
+  deletedAt     DateTime?
+  value         Int           @db.SmallInt
+  commentId     String        @db.Uuid
+  userProfileId String        @db.Uuid
+  comments      comments      @relation(fields: [commentId], references: [id])
+  user_profiles user_profiles @relation(fields: [userProfileId], references: [id])
+
+  @@unique([commentId, userProfileId])
+  @@schema("interactions")
+}
+
+model post_views {
+  id            String        @id @db.Uuid
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime
+  postId        String        @db.Uuid
+  userProfileId String        @db.Uuid
+  viewDuration  Int
+  readComplete  Boolean       @default(false)
+  lastPosition  Float
+  viewCount     Int           @default(1)
+  posts         posts         @relation(fields: [postId], references: [id])
+  user_profiles user_profiles @relation(fields: [userProfileId], references: [id])
+
+  @@unique([postId, userProfileId])
+  @@schema("interactions")
+}
+
+model post_votes {
+  id            String        @id @db.Uuid
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime
+  deletedAt     DateTime?
+  value         Int           @db.SmallInt
+  postId        String        @db.Uuid
+  userProfileId String        @db.Uuid
+  posts         posts         @relation(fields: [postId], references: [id])
+  user_profiles user_profiles @relation(fields: [userProfileId], references: [id])
+
+  @@unique([postId, userProfileId])
+  @@schema("interactions")
+}
+
+model saved_post_collections {
+  id            String        @id @db.Uuid
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime
+  deletedAt     DateTime?
+  name          String
+  description   String?
+  isPrivate     Boolean       @default(true)
+  userProfileId String        @db.Uuid
+  user_profiles user_profiles @relation(fields: [userProfileId], references: [id])
+  saved_posts   saved_posts[]
+
+  @@unique([userProfileId, name])
+  @@schema("interactions")
+}
+
+model saved_posts {
+  id                     String                  @id @db.Uuid
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime
+  deletedAt              DateTime?
+  postId                 String                  @db.Uuid
+  userProfileId          String                  @db.Uuid
+  collectionId           String?                 @db.Uuid
+  note                   String?
+  saved_post_collections saved_post_collections? @relation(fields: [collectionId], references: [id])
+  posts                  posts                   @relation(fields: [postId], references: [id])
+  user_profiles          user_profiles           @relation(fields: [userProfileId], references: [id])
+
+  @@unique([postId, userProfileId])
+  @@schema("interactions")
+}
+
+model user_profiles {
+  id                     String                   @id @db.Uuid
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime
+  deletedAt              DateTime?
+  username               String                   @unique
+  chat_messages          chat_messages[]
+  chat_participants      chat_participants[]
+  message_reads          message_reads[]
+  communities            communities[]
+  community_moderators   community_moderators[]
+  comments               comments[]
+  posts                  posts[]
+  comment_votes          comment_votes[]
+  post_views             post_views[]
+  post_votes             post_votes[]
+  saved_post_collections saved_post_collections[]
+  saved_posts            saved_posts[]
+
+  @@schema("users")
+}
